@@ -181,7 +181,7 @@ export default function DduktakCalculator(){
   const [inputMode,setInputMode]=useState("voice"); // "voice"|"touch"
 
   // AI Chat States
-  const [aiMessages, setAiMessages] = useState([{role: "model", text: "어이! 현장 자재 물량이나 시공 방법 물어볼 거 있으면 말해. 바로 계산해주마."}]);
+  const [aiMessages, setAiMessages] = useState([{role: "model", text: "반갑습니더! 현장 소장입니더. 오늘 현장에 필요한 자재 발주량이나 시공 관련해서 궁금한 거 있으면 편하게 말씀하이소. 깔끔하게 계산해 드리겠심더!"}]);
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const chatEndRef = useRef(null);
@@ -276,7 +276,7 @@ export default function DduktakCalculator(){
       }
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-3.0-flash" });
-      const prompt = `너는 30년 경력의 대한민국 1군 건설사 현장 소장이다. 사용자가 묻는 자재 물량, 시공 방법 등에 대해 구수하고 전문적인 현장 용어로 답변해라. 기계적인 인사말은 생략하고 핵심 물량 산출만 도와줘라.
+      const prompt = `너는 30년 경력의 대한민국 1군 건설사 현장 소장이다. 건방지게 반말하거나 명령조로 말하지 말고, 30년 경력의 친절하고 듬직한 베테랑 소장님 톤으로 구수하게 존댓말과 사투리를 섞어서 답변해라. 기계적인 인사말은 생략하고 핵심 물량 산출만 도와줘라.
 현재 현장 집계 현황: 총 면적 ${summary.hebe.toLocaleString()} ㎡ (헤베), 총 부피 ${summary.rube.toLocaleString()} ㎥ (루베), 총 길이 ${summary.length.toLocaleString()} m.
 질문: ${q}`;
       
@@ -309,6 +309,12 @@ export default function DduktakCalculator(){
       const raw=curTextRef.current.trim();
       setLiveText("");curTextRef.current="";
       if(!raw)return;
+
+      if (tab === "ai") {
+        setAiInput(prev => prev ? prev + " " + raw : raw);
+        return;
+      }
+
       firePiano(raw);
       /* 스마트 필드 채우기 */
       const parsed=parseVoiceFields(raw,tab);
@@ -445,21 +451,60 @@ export default function DduktakCalculator(){
               )}
               <div ref={chatEndRef}/>
             </div>
-            {/* AI 채팅 입력 바 */}
-            <div style={{padding:"12px", background:G1, borderTop:`1px solid ${G3}`, display:"flex", gap:8}}>
-              <input 
-                value={aiInput} 
-                onChange={e=>setAiInput(e.target.value)} 
-                onKeyDown={e=>e.key==="Enter"&&handleAskAI()} 
-                placeholder="소장님께 물어볼 내용..." 
-                style={{flex:1, padding:"12px 14px", borderRadius:8, border:"none", background:G2, color:"#fff", fontSize:14, fontFamily:"monospace", outline:"none"}}
-              />
-              <button 
-                onClick={handleAskAI} 
-                disabled={aiLoading} 
-                style={{padding:"0 20px", background:Y, border:"none", borderRadius:8, color:DARK, fontWeight:900, fontSize:15, cursor:"pointer", transition:"opacity .2s", opacity:aiLoading?0.5:1}}>
-                전송
-              </button>
+            {/* AI 채팅 입력 바 (왕건이 + PTT) */}
+            <div style={{padding:"16px 14px", background:G1, borderTop:`1px solid ${G3}`, display:"flex", flexDirection:"column", gap:12}}>
+              {/* 대화창 전용 마이크 버튼 */}
+              <div style={{position:"relative"}}>
+                {isListening&&(
+                  <>
+                    <div style={{position:"absolute",inset:0,borderRadius:12,background:"rgba(255,68,68,0.18)",animation:"pulse-ring 1s ease-out infinite",pointerEvents:"none"}}/>
+                    <div style={{position:"absolute",inset:0,borderRadius:12,background:"rgba(255,68,68,0.1)",animation:"pulse-ring2 1s ease-out .3s infinite",pointerEvents:"none"}}/>
+                  </>
+                )}
+                <button
+                  onMouseDown={startListening} onMouseUp={stopListening}
+                  onMouseLeave={isListening?stopListening:undefined}
+                  onTouchStart={startListening} onTouchEnd={stopListening}
+                  onContextMenu={e=>e.preventDefault()}
+                  disabled={!canUse || aiLoading}
+                  style={{
+                    width:"100%",height:64,borderRadius:12,border:"none",
+                    background:isListening?"linear-gradient(135deg,#aa0000,#ee1111)":canUse?`linear-gradient(135deg,#c8a800,${Y})`:"#333",
+                    color:isListening?"#fff":DARK,fontWeight:900,fontSize:18,letterSpacing:-.5,
+                    cursor:canUse?"pointer":"not-allowed",
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+                    transform:isListening?"scale(0.98)":"scale(1)",
+                    transition:"background .15s,transform .1s",
+                    boxShadow:isListening?"0 0 20px rgba(255,0,0,0.3)":"0 4px 15px rgba(255,235,59,0.15)",
+                    WebkitTapHighlightColor:"transparent",position:"relative",zIndex:1,
+                  }}>
+                  <span style={{fontSize:22}}>{isListening?"🔴":"🎙️"}</span>
+                  <span>{isListening?(liveText||"녹음 중... 손 떼면 입력"):"누르고 음성으로 질문하기"}</span>
+                </button>
+              </div>
+
+              {/* 텍스트 입력 + 전송 버튼 (크기 확대) */}
+              <div style={{display:"flex", gap:10}}>
+                <input 
+                  value={aiInput} 
+                  onChange={e=>setAiInput(e.target.value)} 
+                  onKeyDown={e=>e.key==="Enter"&&handleAskAI()} 
+                  placeholder="텍스트 입력도 됩니다..." 
+                  style={{flex:1, padding:"18px 16px", borderRadius:10, border:`2px solid ${G4}`, background:G2, color:"#fff", fontSize:16, fontWeight:700, fontFamily:"monospace", outline:"none", transition:"border-color .2s"}}
+                  onFocus={e=>e.target.style.borderColor=Y}
+                  onBlur={e=>e.target.style.borderColor=G4}
+                />
+                <button 
+                  onClick={handleAskAI} 
+                  disabled={aiLoading} 
+                  style={{padding:"0 26px", background:Y, border:"none", borderRadius:10, color:DARK, fontWeight:900, fontSize:18, cursor:"pointer", transition:"opacity .2s, transform .1s", opacity:aiLoading?0.5:1, boxShadow:`0 4px 0 ${Y2}`}}
+                  onMouseDown={e=>e.currentTarget.style.transform="translateY(4px)"}
+                  onMouseUp={e=>e.currentTarget.style.transform="translateY(0)"}
+                  onMouseLeave={e=>e.currentTarget.style.transform="translateY(0)"}
+                >
+                  전송
+                </button>
+              </div>
             </div>
           </div>
         ) : (
