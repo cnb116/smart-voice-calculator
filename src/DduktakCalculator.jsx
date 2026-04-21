@@ -142,7 +142,7 @@ const TABS=[
    formula:(f)=>{const w=parseFloat(f["가로"]||0),h=parseFloat(f["세로"]||0),d=parseFloat(f["두께"]||0);if(!w||!h||!d)return null;const v=Math.round(w*h*d*10000)/10000;return{expr:`${w} × ${h} × ${d}`,value:v,display:`✅ ${w} × ${h} × ${d} = ${v.toLocaleString()} ㎥`,tts:`${v.toLocaleString()} 루베`,share:`${w} × ${h} × ${d} = ${v.toLocaleString()} ㎥`,unit:"㎥"};}},
   {id:"length",icon:"📏",label:"길이(치수)",unit:"m",
    fields:[{key:"길이",label:"길이",unit:"m"},{key:"수량",label:"수량",unit:"개"}],
-   formula:(f)=>{const l=parseFloat(f["길이"]||0),q=parseFloat(f["수량"]||1);if(!l)return null;const v=Math.round(l*q*10000)/10000,expr=q!==1?`${l} × ${q}`:`${l}`;return{expr,value:v,display:`✅ ${expr} = ${v.toLocaleString()} m`,tts:`${v.toLocaleString()} 미터`,share:`${expr} = ${v.toLocaleString()} m`,unit:""};}},
+   formula:(f)=>{const l=parseFloat(f["길이"]||0),q=parseFloat(f["수량"]||1);if(!l)return null;const v=Math.round(l*q*10000)/10000,expr=q!==1?`${l} × ${q}`:`${l}`;return{expr,value:v,display:`✅ ${expr} = ${v.toLocaleString()} m`,tts:`${v.toLocaleString()} 미터`,share:`${expr} = ${v.toLocaleString()} m`,unit:"m"};}},
   {id:"ai",icon:"👷",label:"소장님(AI)",unit:"", fields:[], formula:()=>null}
 ];
 
@@ -181,7 +181,7 @@ export default function DduktakCalculator(){
   const [inputMode,setInputMode]=useState("voice"); // "voice"|"touch"
 
   // AI Chat States
-  const [aiMessages, setAiMessages] = useState([{role: "model", text: "어이, 김씨! 무슨 일인가? 현장 상황은 내가 다 꿰고 있지. 물어볼 거 있으면 말해봐!"}]);
+  const [aiMessages, setAiMessages] = useState([{role: "model", text: "어이! 현장 자재 물량이나 시공 방법 물어볼 거 있으면 말해. 바로 계산해주마."}]);
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const chatEndRef = useRef(null);
@@ -196,8 +196,9 @@ export default function DduktakCalculator(){
     if(!item.calc.ok||item.calc.value===null)return acc;
     if(item.calc.unit==="㎡")acc.hebe=Math.round((acc.hebe+item.calc.value)*10000)/10000;
     else if(item.calc.unit==="㎥")acc.rube=Math.round((acc.rube+item.calc.value)*10000)/10000;
+    else if(item.calc.unit==="m")acc.length=Math.round((acc.length+item.calc.value)*10000)/10000;
     return acc;
-  },{hebe:0,rube:0});
+  },{hebe:0,rube:0,length:0});
 
   /* 탭 전환 시 */
   const switchTab=useCallback((id)=>{
@@ -274,9 +275,9 @@ export default function DduktakCalculator(){
         return;
       }
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const prompt = `너는 30년 경력의 건설 현장 소장이다. 현장 용어로 구수하면서도 핵심을 찌르게 답해라. 무뚝뚝하지만 정감있는 말투를 써라.
-현재 현장 집계 현황 (뚝딱계산기): 총 면적 ${summary.hebe.toLocaleString()} ㎡ (헤베), 총 부피 ${summary.rube.toLocaleString()} ㎥ (루베).
+      const model = genAI.getGenerativeModel({ model: "gemini-3.0-flash" });
+      const prompt = `너는 30년 경력의 대한민국 1군 건설사 현장 소장이다. 사용자가 묻는 자재 물량, 시공 방법 등에 대해 구수하고 전문적인 현장 용어로 답변해라. 기계적인 인사말은 생략하고 핵심 물량 산출만 도와줘라.
+현재 현장 집계 현황: 총 면적 ${summary.hebe.toLocaleString()} ㎡ (헤베), 총 부피 ${summary.rube.toLocaleString()} ㎥ (루베), 총 길이 ${summary.length.toLocaleString()} m.
 질문: ${q}`;
       
       const result = await model.generateContent(prompt);
@@ -388,6 +389,7 @@ export default function DduktakCalculator(){
             {/* 물량 집계 미니 배지 */}
             {summary.hebe>0&&<div style={{background:"#1a3a5c",border:"1px solid #2255aa",borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:800,color:"#66aaff",fontFamily:"monospace"}}>㎡ {summary.hebe.toLocaleString()}</div>}
             {summary.rube>0&&<div style={{background:"#2d2a00",border:`1px solid ${Y2}55`,borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:800,color:Y,fontFamily:"monospace"}}>㎥ {summary.rube.toLocaleString()}</div>}
+            {summary.length>0&&<div style={{background:"#3a1e1e",border:"1px solid #aa5555",borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:800,color:"#ff8888",fontFamily:"monospace"}}>m {summary.length.toLocaleString()}</div>}
             <div style={{fontSize:14,opacity:speaking?1:.2,animation:speaking?"spk-pop .4s":"none",transition:"opacity .3s"}}>🔊</div>
             {history.length>0&&tab!=="ai"&&<button onClick={()=>setHistory([])} style={{background:"transparent",border:`1px solid ${G4}`,borderRadius:4,padding:"2px 8px",fontSize:10,fontWeight:700,color:"#555",cursor:"pointer"}}>삭제</button>}
           </div>
