@@ -629,14 +629,14 @@ const PAD_ROWS=[
 
 function ProKeypad({activeKeys,onKey,onEquals,canUse,isListening,onStart,onStop,inputMode}){
   return(
-    <div style={{padding:"8px 10px 14px",display:"flex",flexDirection:"column",gap:5}}>
+    <div style={{padding:"12px 14px 20px",display:"flex",flexDirection:"column",gap:8}}>
       {/* 음성 모드일 때 PTT 버튼 (= 자리에) */}
       {inputMode==="voice"&&(
-        <div style={{position:"relative",marginBottom:3}}>
+        <div style={{position:"relative",marginBottom:4}}>
           {isListening&&(
             <>
-              <div style={{position:"absolute",inset:0,borderRadius:10,background:"rgba(255,68,68,0.18)",animation:"pulse-ring 1s ease-out infinite",pointerEvents:"none"}}/>
-              <div style={{position:"absolute",inset:0,borderRadius:10,background:"rgba(255,68,68,0.1)",animation:"pulse-ring2 1s ease-out .3s infinite",pointerEvents:"none"}}/>
+              <div style={{position:"absolute",inset:0,borderRadius:12,background:"rgba(255,68,68,0.18)",animation:"pulse-ring 1s ease-out infinite",pointerEvents:"none"}}/>
+              <div style={{position:"absolute",inset:0,borderRadius:12,background:"rgba(255,68,68,0.1)",animation:"pulse-ring2 1s ease-out .3s infinite",pointerEvents:"none"}}/>
             </>
           )}
           <button
@@ -646,17 +646,17 @@ function ProKeypad({activeKeys,onKey,onEquals,canUse,isListening,onStart,onStop,
             onContextMenu={e=>e.preventDefault()}
             disabled={!canUse}
             style={{
-              width:"100%",height:52,borderRadius:10,border:"none",
-              background:isListening?"linear-gradient(135deg,#aa0000,#ee1111)":canUse?`linear-gradient(135deg,#c8a800,${Y})`:"#333",
-              color:isListening?"#fff":DARK,fontWeight:900,fontSize:15,letterSpacing:-.3,
+              width:"100%",height:72,borderRadius:12,border:"none",
+              background:isListening?"linear-gradient(135deg,#aa0000,#ee1111)":canUse?`linear-gradient(135deg,#d4af37,${Y})`:"#333",
+              color:isListening?"#fff":DARK,fontWeight:900,fontSize:18,letterSpacing:-.3,
               cursor:canUse?"pointer":"not-allowed",
-              display:"flex",alignItems:"center",justifyContent:"center",gap:8,
-              transform:isListening?"scale(0.98)":"scale(1)",
+              display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+              transform:isListening?"scale(0.96)":"scale(1)",
               transition:"background .15s,transform .1s",
-              boxShadow:isListening?"0 0 20px rgba(255,0,0,0.3)":"0 2px 12px rgba(255,235,59,0.15)",
+              boxShadow:isListening?"0 0 24px rgba(255,0,0,0.4)":"0 5px 0 #9b8200, inset 0 2px 4px rgba(255,255,255,0.4)",
               WebkitTapHighlightColor:"transparent",position:"relative",zIndex:1,
             }}>
-            <span style={{fontSize:20}}>{isListening?"🔴":"🎙️"}</span>
+            <span style={{fontSize:26}}>{isListening?"🔴":"🎙️"}</span>
             <span>{isListening?"녹음 중 — 손 떼면 계산":"누르고 말하기"}</span>
           </button>
         </div>
@@ -664,7 +664,7 @@ function ProKeypad({activeKeys,onKey,onEquals,canUse,isListening,onStart,onStop,
 
       {/* 숫자 키패드 */}
       {PAD_ROWS.map((row,ri)=>(
-        <div key={ri} style={{display:"flex",gap:5}}>
+        <div key={ri} style={{display:"flex",gap:8}}>
           {row.map(({k,bg,color,flex})=>{
             if(k==="="&&inputMode==="voice")return null;
             const isActive=activeKeys.has(k)||activeKeys.has(k==="×"?"*":k==="÷"?"/":(k==="-"?"-":k));
@@ -672,18 +672,18 @@ function ProKeypad({activeKeys,onKey,onEquals,canUse,isListening,onStart,onStop,
               <button key={k}
                 onClick={k==="="?onEquals:()=>onKey(k)}
                 style={{
-                  flex,height:k==="0"?52:52,
-                  borderRadius:9,border:"none",
+                  flex,height:k==="0"?68:68,
+                  borderRadius:12,border:"none",
                   background:isActive?Y:bg,
                   color:isActive?DARK:color,
-                  fontSize:k==="AC"||k==="="?16:k==="⌫"?18:20,
+                  fontSize:k==="AC"||k==="="?22:k==="⌫"?26:30,
                   fontWeight:900,cursor:"pointer",
                   fontFamily:"monospace",letterSpacing:-1,
-                  transform:isActive?"scale(0.9)":"scale(1)",
+                  transform:isActive?"scale(0.92) translateY(4px)":"scale(1) translateY(0px)",
                   transition:"background .1s,transform .1s,color .1s",
-                  boxShadow:isActive?`0 0 10px ${Y}66`:"none",
+                  boxShadow:isActive?`0 0px 0 #111`:`0 5px 0 #0a0a0a, inset 0 2px 4px rgba(255,255,255,0.06)`,
                   WebkitTapHighlightColor:"transparent",
-                  animation:isActive?"key-press .25s ease-out":"none",
+                  display:"flex",alignItems:"center",justifyContent:"center",padding:0
                 }}>
                 {k}
               </button>
