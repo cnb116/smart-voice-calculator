@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 /* ============================================================
    계산 두뇌 파이프라인
@@ -141,7 +142,8 @@ const TABS=[
    formula:(f)=>{const w=parseFloat(f["가로"]||0),h=parseFloat(f["세로"]||0),d=parseFloat(f["두께"]||0);if(!w||!h||!d)return null;const v=Math.round(w*h*d*10000)/10000;return{expr:`${w} × ${h} × ${d}`,value:v,display:`✅ ${w} × ${h} × ${d} = ${v.toLocaleString()} ㎥`,tts:`${v.toLocaleString()} 루베`,share:`${w} × ${h} × ${d} = ${v.toLocaleString()} ㎥`,unit:"㎥"};}},
   {id:"length",icon:"📏",label:"길이(치수)",unit:"m",
    fields:[{key:"길이",label:"길이",unit:"m"},{key:"수량",label:"수량",unit:"개"}],
-   formula:(f)=>{const l=parseFloat(f["길이"]||0),q=parseFloat(f["수량"]||1);if(!l)return null;const v=Math.round(l*q*10000)/10000,expr=q!==1?`${l} × ${q}`:`${l}`;return{expr,value:v,display:`✅ ${expr} = ${v.toLocaleString()} m`,tts:`${v.toLocaleString()} 미터`,share:`${expr} = ${v.toLocaleString()} m`,unit:""};}}
+   formula:(f)=>{const l=parseFloat(f["길이"]||0),q=parseFloat(f["수량"]||1);if(!l)return null;const v=Math.round(l*q*10000)/10000,expr=q!==1?`${l} × ${q}`:`${l}`;return{expr,value:v,display:`✅ ${expr} = ${v.toLocaleString()} m`,tts:`${v.toLocaleString()} 미터`,share:`${expr} = ${v.toLocaleString()} m`,unit:""};}},
+  {id:"ai",icon:"👷",label:"소장님(AI)",unit:"", fields:[], formula:()=>null}
 ];
 
 /* ============================================================
@@ -178,17 +180,37 @@ export default function DduktakCalculator(){
   const [activeKeys,setActiveKeys]=useState(new Set());
   const [inputMode,setInputMode]=useState("voice"); // "voice"|"touch"
 
+  // AI Chat States
+  const [aiMessages, setAiMessages] = useState([{role: "model", text: "어이, 김씨! 무슨 일인가? 현장 상황은 내가 다 꿰고 있지. 물어볼 거 있으면 말해봐!"}]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
   const recRef=useRef(null),listeningRef=useRef(false),curTextRef=useRef("");
   const pianoTimers=useRef([]);
-  const fieldRefs=useRef({});
 
   const currentTab=TABS.find(t=>t.id===tab);
 
-  /* 탭 전환 시 필드/결과 초기화 */
+  /* 물량 집계 - AI가 읽을 수 있도록 먼저 선언 */
+  const summary=history.reduce((acc,item)=>{
+    if(!item.calc.ok||item.calc.value===null)return acc;
+    if(item.calc.unit==="㎡")acc.hebe=Math.round((acc.hebe+item.calc.value)*10000)/10000;
+    else if(item.calc.unit==="㎥")acc.rube=Math.round((acc.rube+item.calc.value)*10000)/10000;
+    return acc;
+  },{hebe:0,rube:0});
+
+  /* 탭 전환 시 */
   const switchTab=useCallback((id)=>{
     setTab(id);setFields({});setResult(null);setActiveInput(null);
     curTextRef.current="";setLiveText("");
   },[]);
+
+  // AI 스크롤 이동
+  useEffect(() => {
+    if (tab === "ai" && chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [aiMessages, tab]);
 
   useEffect(()=>{
     if(window.speechSynthesis){window.speechSynthesis.getVoices();window.speechSynthesis.onvoiceschanged=()=>window.speechSynthesis.getVoices();}
@@ -223,7 +245,7 @@ export default function DduktakCalculator(){
   /* 결과 계산 */
   const computeResult=useCallback((newFields,tabId)=>{
     const t=TABS.find(x=>x.id===tabId);
-    if(!t)return;
+    if(!t || t.id==="ai")return;
     const r=t.formula(newFields);
     setResult(r);
     return r;
@@ -235,6 +257,37 @@ export default function DduktakCalculator(){
     setHistory(h=>[entry,...h]);
     if(calc.tts){setSpeaking(true);speakResult(calc.tts);setTimeout(()=>setSpeaking(false),2000);}
   },[]);
+
+  /* AI 상황실: 묻기 */
+  const handleAskAI = async () => {
+    if(!aiInput.trim() || aiLoading) return;
+    const q = aiInput.trim();
+    setAiInput("");
+    setAiMessages(p => [...p, { role: "user", text: q }]);
+    setAiLoading(true);
+
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if(!apiKey) {
+        setAiMessages(p => [...p, { role: "model", text: "어이구, API 키가 없구만! 관리자한테 .env에 VITE_GEMINI_API_KEY 넣어달라고 혀!" }]);
+        setAiLoading(false);
+        return;
+      }
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const prompt = `너는 30년 경력의 건설 현장 소장이다. 현장 용어로 구수하면서도 핵심을 찌르게 답해라. 무뚝뚝하지만 정감있는 말투를 써라.
+현재 현장 집계 현황 (뚝딱계산기): 총 면적 ${summary.hebe.toLocaleString()} ㎡ (헤베), 총 부피 ${summary.rube.toLocaleString()} ㎥ (루베).
+질문: ${q}`;
+      
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      setAiMessages(p => [...p, { role: "model", text }]);
+      speakResult(text);
+    } catch(e) {
+      setAiMessages(p => [...p, { role: "model", text: "어이쿠, 통신 불량이구만. 다시 한번 말해봐: " + e.message }]);
+    }
+    setAiLoading(false);
+  };
 
   /* PTT 시작 */
   const startListening=useCallback((e)=>{
@@ -258,7 +311,7 @@ export default function DduktakCalculator(){
       firePiano(raw);
       /* 스마트 필드 채우기 */
       const parsed=parseVoiceFields(raw,tab);
-      if(parsed){
+      if(parsed && tab !== "ai"){
         const newFields={...fields,...parsed};
         setFields(newFields);
         /* 방금 채운 첫 번째 필드 포커스 하이라이트 */
@@ -270,11 +323,10 @@ export default function DduktakCalculator(){
           const calcObj={ok:true,...r};
           addHistory(raw,calcObj);
         } else {
-          /* 필드 부족이면 일반 계산 시도 */
           const fallback=calculateResult(raw,tab);
           if(fallback.ok)addHistory(raw,fallback);
         }
-      } else {
+      } else if (tab !== "ai") {
         const calc=calculateResult(raw,tab);
         if(calc.ok)addHistory(raw,calc);
         else addHistory(raw,calc);
@@ -284,6 +336,7 @@ export default function DduktakCalculator(){
 
   /* 키패드 입력 */
   const handleKey=useCallback((key)=>{
+    if (tab === "ai") return;
     setActiveKeys(p=>new Set([...p,key]));
     setTimeout(()=>setActiveKeys(p=>{const n=new Set(p);n.delete(key);return n;}),260);
 
@@ -307,20 +360,13 @@ export default function DduktakCalculator(){
 
   /* = 버튼 → 히스토리 저장 */
   const handleEquals=useCallback(()=>{
+    if (tab === "ai") return;
     setActiveKeys(p=>new Set([...p,"="]));
     setTimeout(()=>setActiveKeys(p=>{const n=new Set(p);n.delete("=");return n;}),260);
     if(!result)return;
     const label=currentTab.fields.map(f=>fields[f.key]?`${f.label}:${fields[f.key]}${f.unit}`:"").filter(Boolean).join(" ");
     addHistory(`[${currentTab.label}] ${label}`,{ok:true,...result});
-  },[result,currentTab,fields,addHistory]);
-
-  /* 물량 집계 */
-  const summary=history.reduce((acc,item)=>{
-    if(!item.calc.ok||item.calc.value===null)return acc;
-    if(item.calc.unit==="㎡")acc.hebe=Math.round((acc.hebe+item.calc.value)*10000)/10000;
-    else if(item.calc.unit==="㎥")acc.rube=Math.round((acc.rube+item.calc.value)*10000)/10000;
-    return acc;
-  },{hebe:0,rube:0});
+  },[result,currentTab,fields,addHistory,tab]);
 
   const canUse=supported&&!permDenied;
 
@@ -343,7 +389,7 @@ export default function DduktakCalculator(){
             {summary.hebe>0&&<div style={{background:"#1a3a5c",border:"1px solid #2255aa",borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:800,color:"#66aaff",fontFamily:"monospace"}}>㎡ {summary.hebe.toLocaleString()}</div>}
             {summary.rube>0&&<div style={{background:"#2d2a00",border:`1px solid ${Y2}55`,borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:800,color:Y,fontFamily:"monospace"}}>㎥ {summary.rube.toLocaleString()}</div>}
             <div style={{fontSize:14,opacity:speaking?1:.2,animation:speaking?"spk-pop .4s":"none",transition:"opacity .3s"}}>🔊</div>
-            {history.length>0&&<button onClick={()=>setHistory([])} style={{background:"transparent",border:`1px solid ${G4}`,borderRadius:4,padding:"2px 8px",fontSize:10,fontWeight:700,color:"#555",cursor:"pointer"}}>삭제</button>}
+            {history.length>0&&tab!=="ai"&&<button onClick={()=>setHistory([])} style={{background:"transparent",border:`1px solid ${G4}`,borderRadius:4,padding:"2px 8px",fontSize:10,fontWeight:700,color:"#555",cursor:"pointer"}}>삭제</button>}
           </div>
         </div>
 
@@ -367,97 +413,151 @@ export default function DduktakCalculator(){
           })}
         </div>
 
-        {/* ══ 스마트 입력 필드 영역 ══ */}
-        <div style={{background:G1,padding:"12px 14px 10px",borderBottom:`1px solid ${G2}`,flexShrink:0}}>
-          <div style={{display:"flex",gap:8,marginBottom:10}}>
-            {currentTab.fields.map(f=>{
-              const isFocus=activeInput===f.key;
-              return(
-                <div key={f.key} style={{flex:1}} onClick={()=>setActiveInput(f.key)}>
-                  <div style={{fontSize:10,color:isFocus?Y:"#555",fontWeight:700,marginBottom:4,letterSpacing:.3,fontFamily:"monospace",transition:"color .2s"}}>
-                    {f.label} <span style={{color:"#3a3a3a"}}>({f.unit})</span>
+        {tab === "ai" ? (
+          /* ==========================================================
+             AI 상황실 (Gemini Chat) UI
+          ========================================================== */
+          <div style={{flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:DARK}}>
+            <div style={{flex:1, overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:"14px"}}>
+              {aiMessages.map((m,i) => (
+                <div key={i} style={{
+                  alignSelf:m.role==="user"?"flex-end":"flex-start", 
+                  maxWidth:"85%", 
+                  background:m.role==="user"?Y:G3, 
+                  color:m.role==="user"?DARK:"#eee", 
+                  padding:"12px 16px", 
+                  borderRadius:m.role==="user"?"14px 14px 2px 14px":"14px 14px 14px 2px", 
+                  fontSize:14, fontFamily:"monospace", lineHeight:1.5,
+                  boxShadow:"0 2px 8px rgba(0,0,0,0.2)"
+                }}>
+                  <div style={{fontSize:10, marginBottom:5, fontWeight:800, color:m.role==="user"?"#665500":"#999"}}>
+                    {m.role==="user"?"나":"반장님(AI 소장)"}
                   </div>
-                  <div style={{
-                    background:isFocus?G3:G2,
-                    border:`1.5px solid ${isFocus?Y:G3}`,
-                    borderRadius:7,padding:"10px 12px",
-                    minHeight:46,display:"flex",alignItems:"center",
-                    cursor:"pointer",transition:"all .2s",
-                    animation:isFocus?"field-pulse .6s ease-out":"none",
-                    boxShadow:isFocus?`0 0 0 2px ${Y}22`:"none",
-                  }}>
-                    <span style={{fontSize:22,fontWeight:900,color:fields[f.key]?Y:"#333",fontFamily:"monospace",letterSpacing:-1}}>
-                      {fields[f.key]||"—"}
-                    </span>
-                    {isFocus&&<span style={{width:2,height:22,background:Y,marginLeft:3,animation:"blink-dot .8s infinite"}}/>}
-                  </div>
+                  {m.text}
                 </div>
-              );
-            })}
+              ))}
+              {aiLoading && (
+                <div style={{alignSelf:"flex-start", padding:"12px 16px", color:"#888", fontSize:13, fontFamily:"monospace", fontStyle:"italic"}}>
+                  ... 소장님 생각 중 ...
+                </div>
+              )}
+              <div ref={chatEndRef}/>
+            </div>
+            {/* AI 채팅 입력 바 */}
+            <div style={{padding:"12px", background:G1, borderTop:`1px solid ${G3}`, display:"flex", gap:8}}>
+              <input 
+                value={aiInput} 
+                onChange={e=>setAiInput(e.target.value)} 
+                onKeyDown={e=>e.key==="Enter"&&handleAskAI()} 
+                placeholder="소장님께 물어볼 내용..." 
+                style={{flex:1, padding:"12px 14px", borderRadius:8, border:"none", background:G2, color:"#fff", fontSize:14, fontFamily:"monospace", outline:"none"}}
+              />
+              <button 
+                onClick={handleAskAI} 
+                disabled={aiLoading} 
+                style={{padding:"0 20px", background:Y, border:"none", borderRadius:8, color:DARK, fontWeight:900, fontSize:15, cursor:"pointer", transition:"opacity .2s", opacity:aiLoading?0.5:1}}>
+                전송
+              </button>
+            </div>
           </div>
+        ) : (
+          /* ==========================================================
+             기존 뚝딱계산기 UI
+          ========================================================== */
+          <>
+            {/* ══ 스마트 입력 필드 영역 ══ */}
+            <div style={{background:G1,padding:"12px 14px 10px",borderBottom:`1px solid ${G2}`,flexShrink:0}}>
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                {currentTab.fields.map(f=>{
+                  const isFocus=activeInput===f.key;
+                  return(
+                    <div key={f.key} style={{flex:1}} onClick={()=>setActiveInput(f.key)}>
+                      <div style={{fontSize:10,color:isFocus?Y:"#555",fontWeight:700,marginBottom:4,letterSpacing:.3,fontFamily:"monospace",transition:"color .2s"}}>
+                        {f.label} <span style={{color:"#3a3a3a"}}>({f.unit})</span>
+                      </div>
+                      <div style={{
+                        background:isFocus?G3:G2,
+                        border:`1.5px solid ${isFocus?Y:G3}`,
+                        borderRadius:7,padding:"10px 12px",
+                        minHeight:46,display:"flex",alignItems:"center",
+                        cursor:"pointer",transition:"all .2s",
+                        animation:isFocus?"field-pulse .6s ease-out":"none",
+                        boxShadow:isFocus?`0 0 0 2px ${Y}22`:"none",
+                      }}>
+                        <span style={{fontSize:22,fontWeight:900,color:fields[f.key]?Y:"#333",fontFamily:"monospace",letterSpacing:-1}}>
+                          {fields[f.key]||"—"}
+                        </span>
+                        {isFocus&&<span style={{width:2,height:22,background:Y,marginLeft:3,animation:"blink-dot .8s infinite"}}/>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-          {/* 결과 미리보기 */}
-          <div style={{
-            background:result?`linear-gradient(135deg,${G2},${G3})`:"transparent",
-            border:`1px solid ${result?Y+"44":G2}`,
-            borderRadius:8,padding:result?"11px 14px":"0",
-            minHeight:result?44:0,
-            overflow:"hidden",
-            transition:"all .25s",
-            animation:result?"result-in .2s ease-out":"none",
-          }}>
-            {result&&(
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div style={{fontSize:11,color:"#555",fontFamily:"monospace"}}>{result.expr} =</div>
-                <div style={{fontSize:24,fontWeight:900,color:Y,fontFamily:"monospace",letterSpacing:-1}}>
-                  {result.value?.toLocaleString()} <span style={{fontSize:14,color:Y2}}>{currentTab.unit}</span>
+              {/* 결과 미리보기 */}
+              <div style={{
+                background:result?`linear-gradient(135deg,${G2},${G3})`:"transparent",
+                border:`1px solid ${result?Y+"44":G2}`,
+                borderRadius:8,padding:result?"11px 14px":"0",
+                minHeight:result?44:0,
+                overflow:"hidden",
+                transition:"all .25s",
+                animation:result?"result-in .2s ease-out":"none",
+              }}>
+                {result&&(
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div style={{fontSize:11,color:"#555",fontFamily:"monospace"}}>{result.expr} =</div>
+                    <div style={{fontSize:24,fontWeight:900,color:Y,fontFamily:"monospace",letterSpacing:-1}}>
+                      {result.value?.toLocaleString()} <span style={{fontSize:14,color:Y2}}>{currentTab.unit}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ══ 음성 입력 바 ══ */}
+            {inputMode==="voice"&&(
+              <div style={{background:G2,padding:"7px 14px",display:"flex",alignItems:"center",gap:8,minHeight:40,flexShrink:0,borderBottom:`1px solid ${G2}`}}>
+                {isListening&&!liveText&&(
+                  <span style={{width:7,height:7,borderRadius:"50%",background:"#ff4444",flexShrink:0,animation:"blink-dot .7s infinite"}}/>
+                )}
+                <div style={{flex:1,fontSize:13,fontWeight:600,color:isListening?(liveText?"#fff":"#888"):"#444",fontFamily:"monospace",wordBreak:"keep-all"}}>
+                  {isListening?(liveText||"인식 중..."):(canUse?"🎙️ 버튼 누르고 말하세요":"⚠️ 마이크 권한 필요")}
                 </div>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* ══ 음성 입력 바 ══ */}
-        {inputMode==="voice"&&(
-          <div style={{background:G2,padding:"7px 14px",display:"flex",alignItems:"center",gap:8,minHeight:40,flexShrink:0,borderBottom:`1px solid ${G2}`}}>
-            {isListening&&!liveText&&(
-              <span style={{width:7,height:7,borderRadius:"50%",background:"#ff4444",flexShrink:0,animation:"blink-dot .7s infinite"}}/>
-            )}
-            <div style={{flex:1,fontSize:13,fontWeight:600,color:isListening?(liveText?"#fff":"#888"):"#444",fontFamily:"monospace",wordBreak:"keep-all"}}>
-              {isListening?(liveText||"인식 중..."):(canUse?"🎙️ 버튼 누르고 말하세요":"⚠️ 마이크 권한 필요")}
+            {/* ══ 전표 히스토리 ══ */}
+            <div style={{flex:1,overflowY:"auto",padding:"6px 12px",background:DARK}}>
+              {history.length===0&&(
+                <div style={{textAlign:"center",color:"#2a2a2a",fontSize:10,marginTop:12,letterSpacing:2,fontFamily:"monospace"}}>— 전표 없음 —</div>
+              )}
+              {history.map((item,idx)=>(
+                <ReceiptRow key={item.id} item={item} isNew={idx===0} onShare={shareItem} onSpeak={speakResult}/>
+              ))}
             </div>
-          </div>
+
+            {/* ══ 하단: 모드 전환 + 키패드 ══ */}
+            <div style={{background:G1,borderTop:`1px solid ${G2}`,flexShrink:0}}>
+              {/* 입력 모드 토글 */}
+              <div style={{display:"flex",gap:0,borderBottom:`1px solid ${G2}`}}>
+                {[{id:"voice",label:"🎙️ 음성"},{id:"touch",label:"🔢 터치"}].map(m=>(
+                  <button key={m.id} onClick={()=>setInputMode(m.id)} style={{
+                    flex:1,padding:"7px 0",border:"none",
+                    background:inputMode===m.id?G3:"transparent",
+                    color:inputMode===m.id?Y:"#444",
+                    fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",
+                    borderBottom:inputMode===m.id?`2px solid ${Y}`:"2px solid transparent",
+                    marginBottom:-1,transition:"all .15s",
+                  }}>{m.label}</button>
+                ))}
+              </div>
+
+              {/* 프로 키패드 */}
+              <ProKeypad activeKeys={activeKeys} onKey={handleKey} onEquals={handleEquals} canUse={canUse} isListening={isListening} onStart={startListening} onStop={stopListening} inputMode={inputMode}/>
+            </div>
+          </>
         )}
-
-        {/* ══ 전표 히스토리 ══ */}
-        <div style={{flex:1,overflowY:"auto",padding:"6px 12px",background:DARK}}>
-          {history.length===0&&(
-            <div style={{textAlign:"center",color:"#2a2a2a",fontSize:10,marginTop:12,letterSpacing:2,fontFamily:"monospace"}}>— 전표 없음 —</div>
-          )}
-          {history.map((item,idx)=>(
-            <ReceiptRow key={item.id} item={item} isNew={idx===0} onShare={shareItem} onSpeak={speakResult}/>
-          ))}
-        </div>
-
-        {/* ══ 하단: 모드 전환 + 키패드 ══ */}
-        <div style={{background:G1,borderTop:`1px solid ${G2}`,flexShrink:0}}>
-          {/* 입력 모드 토글 */}
-          <div style={{display:"flex",gap:0,borderBottom:`1px solid ${G2}`}}>
-            {[{id:"voice",label:"🎙️ 음성"},{id:"touch",label:"🔢 터치"}].map(m=>(
-              <button key={m.id} onClick={()=>setInputMode(m.id)} style={{
-                flex:1,padding:"7px 0",border:"none",
-                background:inputMode===m.id?G3:"transparent",
-                color:inputMode===m.id?Y:"#444",
-                fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",
-                borderBottom:inputMode===m.id?`2px solid ${Y}`:"2px solid transparent",
-                marginBottom:-1,transition:"all .15s",
-              }}>{m.label}</button>
-            ))}
-          </div>
-
-          {/* 프로 키패드 */}
-          <ProKeypad activeKeys={activeKeys} onKey={handleKey} onEquals={handleEquals} canUse={canUse} isListening={isListening} onStart={startListening} onStop={stopListening} inputMode={inputMode}/>
-        </div>
 
       </div>
     </>
