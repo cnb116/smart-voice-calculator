@@ -278,7 +278,6 @@ export default function DduktakCalculator(){
         const calc=calculateResult(raw,tab);
         if(calc.ok)addHistory(raw,calc);
         else addHistory(raw,calc);
-        else addHistory(raw,calc);
       }
     },220);
   },[tab,fields,firePiano,computeResult,addHistory]);
