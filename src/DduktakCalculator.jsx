@@ -275,7 +275,7 @@ export default function DduktakCalculator(){
         return;
       }
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
       const prompt = `너는 30년 경력의 대한민국 1군 건설사 현장 소장이다. 건방지게 반말하거나 명령조로 말하지 말고, 30년 경력의 친절하고 듬직한 베테랑 소장님 톤으로 구수하게 존댓말과 사투리를 섞어서 답변해라. 기계적인 인사말은 생략하고 핵심 물량 산출만 도와줘라.
 현재 현장 집계 현황: 총 면적 ${summary.hebe.toLocaleString()} ㎡ (헤베), 총 부피 ${summary.rube.toLocaleString()} ㎥ (루베), 총 길이 ${summary.length.toLocaleString()} m.
 질문: ${q}`;
