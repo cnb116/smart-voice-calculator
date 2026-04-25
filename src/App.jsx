@@ -281,7 +281,7 @@ export default function DduktakCalculator(){
         setAiLoading(false);return;
       }
       const genAI=new GoogleGenerativeAI(apiKey);
-      const model=genAI.getGenerativeModel({model:"gemini-1.5-flash"});
+      const model=genAI.getGenerativeModel({model:"gemini-1.5-flash-latest"});
 
       // 김반장 프롬프트: 마크다운 금지 + 경상도 사투리 강제
       const sysCtx="현재 현장 집계: 면적 "+summary.hebe.toLocaleString()+"m2, 부피 "+summary.rube.toLocaleString()+"m3, 길이 "+summary.length.toLocaleString()+"m";
